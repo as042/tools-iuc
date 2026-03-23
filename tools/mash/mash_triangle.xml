@@ -1,0 +1,64 @@
+<tool id="mash_triangle" name="mash triangle" version="@TOOL_VERSION@+galaxy0" profile="@PROFILE@">
+    <description>Estimate a lower-triangular distance matrix</description>
+    <macros>
+        <import>macros.xml</import>
+    </macros>
+    <expand macro="xref"/>
+    <expand macro="requirements"/>
+    <expand macro="version_command"/>
+    <command detect_errors="exit_code"><![CDATA[
+        #import re
+        #set $input_files = []
+        #for $input in $inputs
+            #set $safe_name = re.sub(r'[^\w\-_\.]', '_', $input.element_identifier) + '.' + $input.ext
+            ln -s '$input' '$safe_name' &&
+            $input_files.append(str($safe_name))
+        #end for
+        #set $file_list = ' '.join(["'%s'" % $f for $f in $input_files])
+
+        mash triangle
+            -p \${GALAXY_SLOTS:-1}
+            #if $output.out.edge_list:
+                -E
+                -v${max_p_value}
+                -d$(max_distance)
+            #end if
+            #if $output.comment_fields:
+                -C
+            #end if
+            $file_list
+            > '$output'
+            ]]></command>
+    <inputs>
+        <param name="inputs" type="data_collection" collection_type="list" format="@INTYPES@,msh" label="Input sequences" help="A dataset collection of fasta, fastq (gzipped or not), or Mash sketch files (.msh) with matching k-mer sizes."/>
+        <section name="output_settings" expanded="False" title="Output">
+            <conditional name="out">
+                <param name="format" type="select" label="Specify the output format"
+                    help="Output format for distances. PHYLIP matrix is the default. For edge list, output fields will be [seq1, seq2, dist, p-val, shared-hashes].">
+                    <option value="" selected="true">PHYLIP distance matrix</option>
+                    <option value="-E">edge list (-E)</option>
+                </param>
+                <when value="-E">
+                    <param name="max_p_value" type="float" argument="-v" value="1.0" min="0" max="1.0" label="Maximum p-value"
+                        help="Maximum p-value to report in edge list.">
+                        <validator type="in_range" min="0" max="1.0"/>
+                    </param>
+                    <param name="max_distance" type="float" argument="-d" value="1.0" min="0" max="1.0" label="Maximum distance"
+                        help="Maximum distance to report in edge list.">
+                        <validator type="in_range" min="0" max="1.0"/>
+                    </param>
+                </when>
+                <when value=""/>
+            </conditional>
+            <param name="comment_fields" type="boolean" argument="-C" truevalue="-C" falsevalue="" checked="false" label="Use comment fields for sequence names instead of IDs."/>
+        </section>
+    </inputs>
+    <outputs>
+        <data name="output" format="tabular" label="${tool.name} on ${on_string}"/>
+    </outputs>
+    <tests>
+    </tests>
+    <help><![CDATA[
+    ]]></help>
+    <expand macro="citations"/>
+</tool>
