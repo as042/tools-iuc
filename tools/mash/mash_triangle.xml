@@ -18,13 +18,25 @@
 
         mash triangle
             -p \${GALAXY_SLOTS:-1}
+            -s $sketch_settings.sketch_size
+            -k $sketch_settings.kmer_size
+            -w $sketch_settings.prob_threshold
+            #if str($sketch_settings.input_type.input_type_selector) == "reads":
+                -r
+                -m $sketch_settings.input_type.minimum_kmer_copies
+                #if $sketch_settings.input_type.target_coverage:
+                    -c $sketch_settings.input_type.target_coverage
+                #end if
+                #if $sketch_settings.input_type.genome_size:
+                    -g $sketch_settings.input_type.genome_size
+                #end if
+            #elif str($sketch_settings.input_type.input_type_selector) == "assembly":
+                $sketch_settings.input_type.individual_sequences
+            #end if
             #if str($output_settings.out.format) == "edge_list":
                 -E
                 -v $output_settings.out.max_p_value
                 -d $output_settings.out.max_distance
-            #end if
-            #if $output_settings.comment_fields:
-                -C
             #end if
             $file_list
         #if str($output_settings.out.format) == "phylip":
@@ -123,6 +135,36 @@ with open(output_file, 'w') as f:
     </configfiles>
     <inputs>
         <param name="inputs" type="data_collection" collection_type="list" format="@INTYPES@,msh" label="Input sequences" help="A dataset collection of fasta, fastq (gzipped or not), or Mash sketch files (.msh) with matching k-mer sizes."/>
+        <section name="sketch_settings" expanded="False" title="Sketching">
+            <conditional name="input_type">
+                <param name="input_type_selector" type="select" label="Input type"
+                    help="Select 'Reads' for FASTQ input to enable the -r flag and reads-specific options. For pre-sketched .msh input, these settings are ignored.">
+                    <option value="assembly" selected="true">Assembly</option>
+                    <option value="reads">Reads</option>
+                </param>
+                <when value="assembly">
+                    <param name="individual_sequences" type="boolean" argument="-i" truevalue="-i" falsevalue=""
+                        label="Sketch individual sequences"
+                        help="Sketch individual sequences rather than whole files, e.g. for multi-FASTAs of single-chromosome genomes or pairwise gene comparisons."/>
+                </when>
+                <when value="reads">
+                    <param name="minimum_kmer_copies" type="integer" argument="-m" value="1" min="1" max="1000"
+                        label="Minimum copies of each k-mer required to pass noise filter"/>
+                    <param name="target_coverage" type="integer" argument="-c" value="" min="0" max="500"
+                        optional="true" label="Target coverage"
+                        help="If specified, sketching will conclude if this coverage is reached before the end of the input file (estimated by average k-mer multiplicity)."/>
+                    <param name="genome_size" type="integer" argument="-g" value="" min="1000" max="100000000000"
+                        optional="true" label="Genome size"
+                        help="If specified, will be used for p-value calculation instead of an estimated size from k-mer content."/>
+                </when>
+            </conditional>
+            <param name="sketch_size" type="integer" argument="-s" value="1000" min="10" max="1000000"
+                label="Sketch size" help="Each sketch will have at most this many non-redundant min-hashes."/>
+            <param name="kmer_size" type="integer" argument="-k" value="21" min="1" max="32"
+                label="K-mer size"/>
+            <param name="prob_threshold" type="float" argument="-w" value="0.01" min="0" max="1"
+                label="Probability threshold for warning about low k-mer size"/>
+        </section>
         <section name="output_settings" expanded="False" title="Output">
             <conditional name="out">
                 <param name="format" type="select" label="Specify the output format"
@@ -133,11 +175,11 @@ with open(output_file, 'w') as f:
                 <when value="phylip">
                     <conditional name="raw">
                         <param name="matrix_type" type="select" label="Matrix type"
-                            help="Square is compatible with most tools. Lower/upper triangle are more compact. Raw output is unmodified mash output.">
+                            help="Square is compatible with most tools. Lower/upper triangle are more compact. Raw output is unmodified Mash output.">
                             <option value="square" selected="true">Square (full symmetric matrix)</option>
                             <option value="lower_triangle">Lower triangle</option>
                             <option value="upper_triangle">Upper triangle</option>
-                            <option value="raw_output">Raw output (unmodified mash output)</option>
+                            <option value="raw_output">Raw output (unmodified Mash output)</option>
                         </param>
                         <when value="square">
                             <param name="relaxed" type="boolean" truevalue="true" falsevalue="false" checked="true" label="Relaxed PHYLIP format"
@@ -169,7 +211,6 @@ with open(output_file, 'w') as f:
                     </param>
                 </when>
             </conditional>
-            <param name="comment_fields" type="boolean" argument="-C" truevalue="-C" falsevalue="" checked="false" label="Use comment fields for sequence names instead of IDs."/>
         </section>
     </inputs>
     <outputs>
@@ -264,7 +305,7 @@ with open(output_file, 'w') as f:
             </output>
         </test>
         <test expect_num_outputs="1">
-            <!-- Test 4: Raw output (unmodified mash) -->
+            <!-- Test 4: Raw output (unmodified Mash) -->
             <param name="inputs">
                 <collection type="list">
                     <element name="chrM_galGal3" value="chrM_galGal3.fa.gz" ftype="fasta.gz"/>
@@ -288,15 +329,95 @@ with open(output_file, 'w') as f:
                 </assert_contents>
             </output>
         </test>
+        <test expect_num_outputs="1">
+            <!-- Test 5: Custom sketch size and k-mer size -->
+            <param name="inputs">
+                <collection type="list">
+                    <element name="chrM_galGal3" value="chrM_galGal3.fa.gz" ftype="fasta.gz"/>
+                    <element name="chrM_hg38" value="chrM_hg38.fa.gz" ftype="fasta.gz"/>
+                    <element name="chrM_mm39" value="chrM_mm39.fa.gz" ftype="fasta.gz"/>
+                </collection>
+            </param>
+            <section name="sketch_settings">
+                <conditional name="input_type">
+                    <param name="input_type_selector" value="assembly"/>
+                </conditional>
+                <param name="sketch_size" value="500"/>
+                <param name="kmer_size" value="16"/>
+            </section>
+            <output name="output" ftype="phylip">
+                <assert_contents>
+                    <has_n_lines n="4"/>
+                    <has_text text="chrM_galGal3"/>
+                </assert_contents>
+            </output>
+        </test>
+        <test expect_num_outputs="1">
+            <!-- Test 6: Pre-sketched .msh input (sketch params ignored, names are baked into .msh files) -->
+            <param name="inputs">
+                <collection type="list">
+                    <element name="sample1" value="m64326e_231117_100511.hifi_reads.bc2068--bc2068.msh" ftype="msh"/>
+                    <element name="sample2" value="m64326e_231130_052019.hifi_reads.bc2068--bc2068.msh" ftype="msh"/>
+                </collection>
+            </param>
+            <output name="output" ftype="phylip">
+                <assert_contents>
+                    <has_n_lines n="3"/>
+                    <has_text text="0.014923"/>
+                </assert_contents>
+            </output>
+        </test>
+        <test expect_num_outputs="1">
+            <!-- Test 7: Reads mode with custom min k-mer copies -->
+            <param name="inputs">
+                <collection type="list">
+                    <element name="reads1" value="ERR024951_seqtk_sample_1000_1.fastq" ftype="fastqsanger"/>
+                    <element name="reads2" value="ERR024951_seqtk_sample_1000_2.fastq" ftype="fastqsanger"/>
+                </collection>
+            </param>
+            <section name="sketch_settings">
+                <conditional name="input_type">
+                    <param name="input_type_selector" value="reads"/>
+                    <param name="minimum_kmer_copies" value="2"/>
+                </conditional>
+            </section>
+            <section name="output_settings">
+                <conditional name="out">
+                    <param name="format" value="phylip"/>
+                    <conditional name="raw">
+                        <param name="matrix_type" value="raw_output"/>
+                    </conditional>
+                </conditional>
+            </section>
+            <output name="output" ftype="phylip">
+                <assert_contents>
+                    <has_n_lines n="3"/>
+                </assert_contents>
+            </output>
+        </test>
     </tests>
     <help><![CDATA[
-**mash triangle** estimates the distance of each input sequence to every other input sequence and outputs a distance matrix.
+**Mash triangle** estimates the distance of each input sequence to every other input sequence and outputs a distance matrix.
+
+**Sketching options:**
+
+When providing raw sequence files (FASTA/FASTQ) rather than pre-made Mash sketch files (.msh),
+the following sketch parameters can be configured:
+
+- **Input type**: Select whether your input files are assemblies (FASTA) or reads (FASTQ). This determines which sketch options are available. For pre-sketched .msh input, these settings are ignored.
+- **Sketch size** (-s): Number of non-redundant min-hashes per sketch (default: 1000).
+- **K-mer size** (-k): Length of k-mers used for hashing (default: 21, max: 32).
+- **Probability threshold** (-w): Threshold for warning about low k-mer size (default: 0.01).
+- **Individual sequences** (-i, assembly only): Sketch each sequence separately rather than the whole file.
+- **Minimum k-mer copies** (-m, reads only): Minimum observations of a k-mer to pass the noise filter (default: 1).
+- **Target coverage** (-c, reads only): Stop sketching when this coverage is reached.
+- **Genome size** (-g, reads only): Use this genome size for p-value calculation instead of estimating from k-mer content.
 
 **Output formats:**
 
 - **PHYLIP distance matrix** (default): A distance matrix in PHYLIP format. Sub-options:
 
-  - *Matrix type*: Square (full symmetric, default), lower triangle, upper triangle, or raw output (unmodified mash output).
+  - *Matrix type*: Square (full symmetric, default), lower triangle, upper triangle, or raw output (unmodified Mash output).
   - *Relaxed*: When enabled, taxon names are not truncated to 10 characters. Strict PHYLIP limits names to 10 characters.
 
   Taxon names are derived from dataset collection element identifiers.
