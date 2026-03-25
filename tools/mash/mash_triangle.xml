@@ -1,5 +1,5 @@
 <tool id="mash_triangle" name="mash triangle" version="@TOOL_VERSION@+galaxy0" profile="@PROFILE@">
-    <description>Estimate a lower-triangular distance matrix</description>
+    <description>Estimate a distance matrix</description>
     <macros>
         <import>macros.xml</import>
     </macros>
@@ -12,33 +12,153 @@
         #for $input in $inputs
             #set $safe_name = re.sub(r'[^\w\-_\.]', '_', $input.element_identifier) + '.' + $input.ext
             ln -s '$input' '$safe_name' &&
-            $input_files.append(str($safe_name))
+            #silent $input_files.append(str($safe_name))
         #end for
         #set $file_list = ' '.join(["'%s'" % $f for $f in $input_files])
 
         mash triangle
             -p \${GALAXY_SLOTS:-1}
-            #if $output.out.edge_list:
+            #if str($output_settings.out.format) == "edge_list":
                 -E
-                -v${max_p_value}
-                -d$(max_distance)
+                -v $output_settings.out.max_p_value
+                -d $output_settings.out.max_distance
             #end if
-            #if $output.comment_fields:
+            #if $output_settings.comment_fields:
                 -C
             #end if
             $file_list
+        #if str($output_settings.out.format) == "phylip":
+            #set $mt = str($output_settings.out.raw.matrix_type)
+            #if $mt == "square" or $mt == "lower_triangle" or $mt == "upper_triangle":
+                #if $output_settings.out.raw.relaxed:
+                    #set $relaxed_flag = "--relaxed"
+                #else:
+                    #set $relaxed_flag = ""
+                #end if
+                #if $mt == "lower_triangle" or $mt == "upper_triangle":
+                    #if $output_settings.out.raw.include_diagonal:
+                        #set $diagonal_flag = "--diagonal"
+                    #else:
+                        #set $diagonal_flag = ""
+                    #end if
+                #else:
+                    #set $diagonal_flag = ""
+                #end if
+                > raw_triangle.tmp &&
+                python '$convert_script' raw_triangle.tmp '$output' '$mt' $relaxed_flag $diagonal_flag
+            #else:
+                > '$output'
+            #end if
+        #else:
             > '$output'
-            ]]></command>
+        #end if
+    ]]></command>
+    <configfiles>
+        <configfile name="convert_script"><![CDATA[#import re
+import sys
+
+name_map = {
+#for $input in $inputs
+#set $safe_name = re.sub(r'[^\w\-_\.]', '_', str($input.element_identifier)) + '.' + str($input.ext)
+    "$safe_name": "$input.element_identifier",
+#end for
+}
+
+input_file = sys.argv[1]
+output_file = sys.argv[2]
+mode = sys.argv[3]
+relaxed = '--relaxed' in sys.argv
+diagonal = '--diagonal' in sys.argv
+
+with open(input_file) as f:
+    lines = f.read().strip().split('\n')
+
+n = int(lines[0].strip())
+raw_names = []
+matrix = [[0.0] * n for _ in range(n)]
+
+for i in range(n):
+    parts = lines[i + 1].split('\t')
+    raw_name = parts[0]
+    raw_names.append(name_map.get(raw_name, raw_name))
+    for j in range(len(parts) - 1):
+        val = float(parts[j + 1])
+        matrix[i][j] = val
+        matrix[j][i] = val
+
+if relaxed:
+    max_len = max(len(nm) for nm in raw_names)
+    pad = max(max_len, 10)
+    names = [nm.ljust(pad) for nm in raw_names]
+else:
+    names = [nm[:10].ljust(10) for nm in raw_names]
+
+fmt = [['%.6f' % matrix[i][j] for j in range(n)] for i in range(n)]
+col_w = [max(len(fmt[i][j]) for i in range(n)) for j in range(n)]
+
+with open(output_file, 'w') as f:
+    f.write('%d\n' % n)
+    for i in range(n):
+        if mode == 'square':
+            parts = [fmt[i][j].rjust(col_w[j]) for j in range(n)]
+        elif mode == 'lower_triangle':
+            end = i + 1 if diagonal else i
+            parts = [fmt[i][j].rjust(col_w[j]) for j in range(end)]
+        elif mode == 'upper_triangle':
+            start = i if diagonal else i + 1
+            parts = []
+            for j in range(n):
+                if j < start:
+                    parts.append(' ' * col_w[j])
+                else:
+                    parts.append(fmt[i][j].rjust(col_w[j]))
+
+        if not parts or all(p.isspace() for p in parts):
+            f.write('%s\n' % names[i].rstrip())
+        elif relaxed:
+            f.write('%s %s\n' % (names[i], ' '.join(parts)))
+        else:
+            f.write('%s%s\n' % (names[i], ' '.join(parts)))
+]]></configfile>
+    </configfiles>
     <inputs>
         <param name="inputs" type="data_collection" collection_type="list" format="@INTYPES@,msh" label="Input sequences" help="A dataset collection of fasta, fastq (gzipped or not), or Mash sketch files (.msh) with matching k-mer sizes."/>
         <section name="output_settings" expanded="False" title="Output">
             <conditional name="out">
                 <param name="format" type="select" label="Specify the output format"
-                    help="Output format for distances. PHYLIP matrix is the default. For edge list, output fields will be [seq1, seq2, dist, p-val, shared-hashes].">
-                    <option value="" selected="true">PHYLIP distance matrix</option>
-                    <option value="-E">edge list (-E)</option>
+                    help="PHYLIP format is compatible with many downstream phylogenetic tools. For edge list, output fields will be [seq1, seq2, dist, p-val, shared-hashes].">
+                    <option value="phylip" selected="true">PHYLIP distance matrix</option>
+                    <option value="edge_list">Edge list (-E)</option>
                 </param>
-                <when value="-E">
+                <when value="phylip">
+                    <conditional name="raw">
+                        <param name="matrix_type" type="select" label="Matrix type"
+                            help="Square is compatible with most tools. Lower/upper triangle are more compact. Raw output is unmodified mash output.">
+                            <option value="square" selected="true">Square (full symmetric matrix)</option>
+                            <option value="lower_triangle">Lower triangle</option>
+                            <option value="upper_triangle">Upper triangle</option>
+                            <option value="raw_output">Raw output (unmodified mash output)</option>
+                        </param>
+                        <when value="square">
+                            <param name="relaxed" type="boolean" truevalue="true" falsevalue="false" checked="true" label="Relaxed PHYLIP format"
+                                help="When enabled, taxon names are not truncated to 10 characters. Disable for strict PHYLIP compatibility."/>
+                        </when>
+                        <when value="lower_triangle">
+                            <param name="relaxed" type="boolean" truevalue="true" falsevalue="false" checked="true" label="Relaxed PHYLIP format"
+                                help="When enabled, taxon names are not truncated to 10 characters. Disable for strict PHYLIP compatibility."/>
+                            <param name="include_diagonal" type="boolean" truevalue="true" falsevalue="false" checked="false" label="Include diagonal"
+                                help="Include the diagonal (zeros) in the distance matrix."/>
+                        </when>
+                        <when value="upper_triangle">
+                            <param name="relaxed" type="boolean" truevalue="true" falsevalue="false" checked="true" label="Relaxed PHYLIP format"
+                                help="When enabled, taxon names are not truncated to 10 characters. Disable for strict PHYLIP compatibility."/>
+                            <param name="include_diagonal" type="boolean" truevalue="true" falsevalue="false" checked="false" label="Include diagonal"
+                                help="Include the diagonal (zeros) in the distance matrix."/>
+                        </when>
+                        <when value="raw_output"/>
+                    </conditional>
+                </when>
+                <when value="edge_list">
                     <param name="max_p_value" type="float" argument="-v" value="1.0" min="0" max="1.0" label="Maximum p-value"
                         help="Maximum p-value to report in edge list.">
                         <validator type="in_range" min="0" max="1.0"/>
@@ -48,17 +168,140 @@
                         <validator type="in_range" min="0" max="1.0"/>
                     </param>
                 </when>
-                <when value=""/>
             </conditional>
             <param name="comment_fields" type="boolean" argument="-C" truevalue="-C" falsevalue="" checked="false" label="Use comment fields for sequence names instead of IDs."/>
         </section>
     </inputs>
     <outputs>
-        <data name="output" format="tabular" label="${tool.name} on ${on_string}"/>
+        <data name="output" format="tabular" label="${tool.name} on ${on_string}">
+            <change_format>
+                <when input="output_settings.out.format" value="phylip" format="phylip"/>
+            </change_format>
+        </data>
     </outputs>
     <tests>
+        <test expect_num_outputs="1">
+            <!-- Test 1: Square PHYLIP matrix, strict names -->
+            <param name="inputs">
+                <collection type="list">
+                    <element name="chrM_galGal3" value="chrM_galGal3.fa.gz" ftype="fasta.gz"/>
+                    <element name="chrM_hg38" value="chrM_hg38.fa.gz" ftype="fasta.gz"/>
+                    <element name="chrM_mm39" value="chrM_mm39.fa.gz" ftype="fasta.gz"/>
+                    <element name="chrM_panTro2" value="chrM_panTro2.fa.gz" ftype="fasta.gz"/>
+                </collection>
+            </param>
+            <section name="output_settings">
+                <conditional name="out">
+                    <param name="format" value="phylip"/>
+                    <conditional name="raw">
+                        <param name="matrix_type" value="square"/>
+                        <param name="relaxed" value="false"/>
+                    </conditional>
+                </conditional>
+            </section>
+            <output name="output" ftype="phylip">
+                <assert_contents>
+                    <has_n_lines n="5"/>
+                    <has_text text="0.000000"/>
+                    <has_text text="0.295981"/>
+                    <has_text text="chrM_galGa"/>
+                    <has_text text="chrM_hg38 "/>
+                </assert_contents>
+            </output>
+        </test>
+        <test expect_num_outputs="1">
+            <!-- Test 2: Lower triangle, strict names -->
+            <param name="inputs">
+                <collection type="list">
+                    <element name="chrM_galGal3" value="chrM_galGal3.fa.gz" ftype="fasta.gz"/>
+                    <element name="chrM_hg38" value="chrM_hg38.fa.gz" ftype="fasta.gz"/>
+                    <element name="chrM_mm39" value="chrM_mm39.fa.gz" ftype="fasta.gz"/>
+                    <element name="chrM_panTro2" value="chrM_panTro2.fa.gz" ftype="fasta.gz"/>
+                </collection>
+            </param>
+            <section name="output_settings">
+                <conditional name="out">
+                    <param name="format" value="phylip"/>
+                    <conditional name="raw">
+                        <param name="matrix_type" value="lower_triangle"/>
+                        <param name="relaxed" value="false"/>
+                    </conditional>
+                </conditional>
+            </section>
+            <output name="output" ftype="phylip">
+                <assert_contents>
+                    <has_n_lines n="5"/>
+                    <has_text text="0.295981"/>
+                    <not_has_text text="&#9;"/>
+                </assert_contents>
+            </output>
+        </test>
+        <test expect_num_outputs="1">
+            <!-- Test 3: Square PHYLIP matrix, relaxed names -->
+            <param name="inputs">
+                <collection type="list">
+                    <element name="chrM_galGal3" value="chrM_galGal3.fa.gz" ftype="fasta.gz"/>
+                    <element name="chrM_hg38" value="chrM_hg38.fa.gz" ftype="fasta.gz"/>
+                    <element name="chrM_mm39" value="chrM_mm39.fa.gz" ftype="fasta.gz"/>
+                    <element name="chrM_panTro2" value="chrM_panTro2.fa.gz" ftype="fasta.gz"/>
+                </collection>
+            </param>
+            <section name="output_settings">
+                <conditional name="out">
+                    <param name="format" value="phylip"/>
+                    <conditional name="raw">
+                        <param name="matrix_type" value="square"/>
+                    </conditional>
+                </conditional>
+            </section>
+            <output name="output" ftype="phylip">
+                <assert_contents>
+                    <has_n_lines n="5"/>
+                    <has_text text="chrM_galGal3"/>
+                    <has_text text="chrM_panTro2"/>
+                    <has_text text="0.000000"/>
+                </assert_contents>
+            </output>
+        </test>
+        <test expect_num_outputs="1">
+            <!-- Test 4: Raw output (unmodified mash) -->
+            <param name="inputs">
+                <collection type="list">
+                    <element name="chrM_galGal3" value="chrM_galGal3.fa.gz" ftype="fasta.gz"/>
+                    <element name="chrM_hg38" value="chrM_hg38.fa.gz" ftype="fasta.gz"/>
+                    <element name="chrM_mm39" value="chrM_mm39.fa.gz" ftype="fasta.gz"/>
+                    <element name="chrM_panTro2" value="chrM_panTro2.fa.gz" ftype="fasta.gz"/>
+                </collection>
+            </param>
+            <section name="output_settings">
+                <conditional name="out">
+                    <param name="format" value="phylip"/>
+                    <conditional name="raw">
+                        <param name="matrix_type" value="raw_output"/>
+                    </conditional>
+                </conditional>
+            </section>
+            <output name="output" ftype="phylip">
+                <assert_contents>
+                    <has_n_lines n="5"/>
+                    <has_text text="0.295981"/>
+                </assert_contents>
+            </output>
+        </test>
     </tests>
     <help><![CDATA[
+**mash triangle** estimates the distance of each input sequence to every other input sequence and outputs a distance matrix.
+
+**Output formats:**
+
+- **PHYLIP distance matrix** (default): A distance matrix in PHYLIP format. Sub-options:
+
+  - *Matrix type*: Square (full symmetric, default), lower triangle, upper triangle, or raw output (unmodified mash output).
+  - *Relaxed*: When enabled, taxon names are not truncated to 10 characters. Strict PHYLIP limits names to 10 characters.
+
+  Taxon names are derived from dataset collection element identifiers.
+
+- **Edge list**: A tabular list of pairwise distances with fields [seq1, seq2, distance, p-value, shared-hashes].
     ]]></help>
     <expand macro="citations"/>
 </tool>
