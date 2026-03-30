@@ -222,7 +222,7 @@ with open(output_file, 'w') as f:
     </outputs>
     <tests>
         <test expect_num_outputs="1">
-            <!-- Test 1: Square PHYLIP matrix, strict names -->
+            <!-- Test 1: Square matrix, strict PHYLIP (10-char truncated names) -->
             <param name="inputs">
                 <collection type="list">
                     <element name="chrM_galGal3" value="chrM_galGal3.fa.gz" ftype="fasta.gz"/>
@@ -240,18 +240,31 @@ with open(output_file, 'w') as f:
                     </conditional>
                 </conditional>
             </section>
-            <output name="output" ftype="phylip">
-                <assert_contents>
-                    <has_n_lines n="5"/>
-                    <has_text text="0.000000"/>
-                    <has_text text="0.295981"/>
-                    <has_text text="chrM_galGa"/>
-                    <has_text text="chrM_hg38 "/>
-                </assert_contents>
-            </output>
+            <output name="output" file="triangle_square_strict.phylip" ftype="phylip"/>
         </test>
         <test expect_num_outputs="1">
-            <!-- Test 2: Lower triangle, strict names -->
+            <!-- Test 2: Square matrix, relaxed PHYLIP (full names, space separator) -->
+            <param name="inputs">
+                <collection type="list">
+                    <element name="chrM_galGal3" value="chrM_galGal3.fa.gz" ftype="fasta.gz"/>
+                    <element name="chrM_hg38" value="chrM_hg38.fa.gz" ftype="fasta.gz"/>
+                    <element name="chrM_mm39" value="chrM_mm39.fa.gz" ftype="fasta.gz"/>
+                    <element name="chrM_panTro2" value="chrM_panTro2.fa.gz" ftype="fasta.gz"/>
+                </collection>
+            </param>
+            <section name="output_settings">
+                <conditional name="out">
+                    <param name="format" value="phylip"/>
+                    <conditional name="raw">
+                        <param name="matrix_type" value="square"/>
+                        <param name="relaxed" value="true"/>
+                    </conditional>
+                </conditional>
+            </section>
+            <output name="output" file="triangle_square_relaxed.phylip" ftype="phylip"/>
+        </test>
+        <test expect_num_outputs="1">
+            <!-- Test 3: Lower triangle, strict, no diagonal (row 0 = name only) -->
             <param name="inputs">
                 <collection type="list">
                     <element name="chrM_galGal3" value="chrM_galGal3.fa.gz" ftype="fasta.gz"/>
@@ -266,19 +279,14 @@ with open(output_file, 'w') as f:
                     <conditional name="raw">
                         <param name="matrix_type" value="lower_triangle"/>
                         <param name="relaxed" value="false"/>
+                        <param name="include_diagonal" value="false"/>
                     </conditional>
                 </conditional>
             </section>
-            <output name="output" ftype="phylip">
-                <assert_contents>
-                    <has_n_lines n="5"/>
-                    <has_text text="0.295981"/>
-                    <not_has_text text="&#9;"/>
-                </assert_contents>
-            </output>
+            <output name="output" file="triangle_lower_strict.phylip" ftype="phylip"/>
         </test>
         <test expect_num_outputs="1">
-            <!-- Test 3: Square PHYLIP matrix, relaxed names -->
+            <!-- Test 4: Lower triangle, relaxed, with diagonal -->
             <param name="inputs">
                 <collection type="list">
                     <element name="chrM_galGal3" value="chrM_galGal3.fa.gz" ftype="fasta.gz"/>
@@ -291,21 +299,38 @@ with open(output_file, 'w') as f:
                 <conditional name="out">
                     <param name="format" value="phylip"/>
                     <conditional name="raw">
-                        <param name="matrix_type" value="square"/>
+                        <param name="matrix_type" value="lower_triangle"/>
+                        <param name="relaxed" value="true"/>
+                        <param name="include_diagonal" value="true"/>
                     </conditional>
                 </conditional>
             </section>
-            <output name="output" ftype="phylip">
-                <assert_contents>
-                    <has_n_lines n="5"/>
-                    <has_text text="chrM_galGal3"/>
-                    <has_text text="chrM_panTro2"/>
-                    <has_text text="0.000000"/>
-                </assert_contents>
-            </output>
+            <output name="output" file="triangle_lower_relaxed_diag.phylip" ftype="phylip"/>
         </test>
         <test expect_num_outputs="1">
-            <!-- Test 4: Raw output (unmodified Mash) -->
+            <!-- Test 5: Upper triangle, strict, no diagonal (last row = name only) -->
+            <param name="inputs">
+                <collection type="list">
+                    <element name="chrM_galGal3" value="chrM_galGal3.fa.gz" ftype="fasta.gz"/>
+                    <element name="chrM_hg38" value="chrM_hg38.fa.gz" ftype="fasta.gz"/>
+                    <element name="chrM_mm39" value="chrM_mm39.fa.gz" ftype="fasta.gz"/>
+                    <element name="chrM_panTro2" value="chrM_panTro2.fa.gz" ftype="fasta.gz"/>
+                </collection>
+            </param>
+            <section name="output_settings">
+                <conditional name="out">
+                    <param name="format" value="phylip"/>
+                    <conditional name="raw">
+                        <param name="matrix_type" value="upper_triangle"/>
+                        <param name="relaxed" value="false"/>
+                        <param name="include_diagonal" value="false"/>
+                    </conditional>
+                </conditional>
+            </section>
+            <output name="output" file="triangle_upper_strict.phylip" ftype="phylip"/>
+        </test>
+        <test expect_num_outputs="1">
+            <!-- Test 6: Raw mash output (no convert script, tab-separated) -->
             <param name="inputs">
                 <collection type="list">
                     <element name="chrM_galGal3" value="chrM_galGal3.fa.gz" ftype="fasta.gz"/>
@@ -322,15 +347,29 @@ with open(output_file, 'w') as f:
                     </conditional>
                 </conditional>
             </section>
-            <output name="output" ftype="phylip">
-                <assert_contents>
-                    <has_n_lines n="5"/>
-                    <has_text text="0.295981"/>
-                </assert_contents>
-            </output>
+            <output name="output" file="triangle_raw.phylip" ftype="phylip"/>
         </test>
         <test expect_num_outputs="1">
-            <!-- Test 5: Custom sketch size and k-mer size -->
+            <!-- Test 7: Edge list (-E flag, tabular output) -->
+            <param name="inputs">
+                <collection type="list">
+                    <element name="chrM_galGal3" value="chrM_galGal3.fa.gz" ftype="fasta.gz"/>
+                    <element name="chrM_hg38" value="chrM_hg38.fa.gz" ftype="fasta.gz"/>
+                    <element name="chrM_mm39" value="chrM_mm39.fa.gz" ftype="fasta.gz"/>
+                    <element name="chrM_panTro2" value="chrM_panTro2.fa.gz" ftype="fasta.gz"/>
+                </collection>
+            </param>
+            <section name="output_settings">
+                <conditional name="out">
+                    <param name="format" value="edge_list"/>
+                    <param name="max_p_value" value="1.0"/>
+                    <param name="max_distance" value="1.0"/>
+                </conditional>
+            </section>
+            <output name="output" file="triangle_edge_list.tabular" ftype="tabular"/>
+        </test>
+        <test expect_num_outputs="1">
+            <!-- Test 8: Custom sketch size and k-mer size produce different distances -->
             <param name="inputs">
                 <collection type="list">
                     <element name="chrM_galGal3" value="chrM_galGal3.fa.gz" ftype="fasta.gz"/>
@@ -345,30 +384,29 @@ with open(output_file, 'w') as f:
                 <param name="sketch_size" value="500"/>
                 <param name="kmer_size" value="16"/>
             </section>
-            <output name="output" ftype="phylip">
-                <assert_contents>
-                    <has_n_lines n="4"/>
-                    <has_text text="chrM_galGal3"/>
-                </assert_contents>
-            </output>
+            <section name="output_settings">
+                <conditional name="out">
+                    <param name="format" value="phylip"/>
+                    <conditional name="raw">
+                        <param name="matrix_type" value="square"/>
+                        <param name="relaxed" value="true"/>
+                    </conditional>
+                </conditional>
+            </section>
+            <output name="output" file="triangle_custom_sketch.phylip" ftype="phylip"/>
         </test>
         <test expect_num_outputs="1">
-            <!-- Test 6: Pre-sketched .msh input (sketch params ignored, names are baked into .msh files) -->
+            <!-- Test 9: Pre-sketched .msh input (baked-in names pass through name_map) -->
             <param name="inputs">
                 <collection type="list">
                     <element name="sample1" value="m64326e_231117_100511.hifi_reads.bc2068--bc2068.msh" ftype="msh"/>
                     <element name="sample2" value="m64326e_231130_052019.hifi_reads.bc2068--bc2068.msh" ftype="msh"/>
                 </collection>
             </param>
-            <output name="output" ftype="phylip">
-                <assert_contents>
-                    <has_n_lines n="3"/>
-                    <has_text text="0.014923"/>
-                </assert_contents>
-            </output>
+            <output name="output" file="triangle_msh_input.phylip" ftype="phylip"/>
         </test>
         <test expect_num_outputs="1">
-            <!-- Test 7: Reads mode with custom min k-mer copies -->
+            <!-- Test 10: Reads mode with -r -m 2; name_map maps safe_names to element identifiers -->
             <param name="inputs">
                 <collection type="list">
                     <element name="reads1" value="ERR024951_seqtk_sample_1000_1.fastq" ftype="fastqsanger"/>
@@ -385,15 +423,12 @@ with open(output_file, 'w') as f:
                 <conditional name="out">
                     <param name="format" value="phylip"/>
                     <conditional name="raw">
-                        <param name="matrix_type" value="raw_output"/>
+                        <param name="matrix_type" value="square"/>
+                        <param name="relaxed" value="true"/>
                     </conditional>
                 </conditional>
             </section>
-            <output name="output" ftype="phylip">
-                <assert_contents>
-                    <has_n_lines n="3"/>
-                </assert_contents>
-            </output>
+            <output name="output" file="triangle_reads_mode.phylip" ftype="phylip"/>
         </test>
     </tests>
     <help><![CDATA[
